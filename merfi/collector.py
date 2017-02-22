@@ -1,5 +1,50 @@
 from __future__ import with_statement
 import os
+from collections import namedtuple
+from glob import glob
+
+
+Rpm = namedtuple('Rpm', ['name', 'path'])
+
+
+class Repo(object):
+    def __init__(self, path):
+        self.path = path
+
+    def __eq__(self, other):
+        return self.path == other.path
+
+    def __repr__(self):
+        return '%s(%s)' % (self.__class__.__name__, self.path)
+
+    def __hash__(self):
+        return hash(self.__repr__())
+
+
+class RpmRepo(Repo):
+    @property
+    def repomd(self):
+        """ Find the repomd.xml file to be signed within a yum repo """
+        return os.path.join(self.path, 'repodata/repomd.xml')
+
+    @property
+    def rpms(self):
+        """ Find all the .rpm files to be signed within a yum repo """
+        result = set()
+        for root, dirs, files in os.path.walk(self.path):
+            for name in files:
+                if name.endswith('.rpm'):
+                    path = os.path.join(root, name)
+                    result.add(Rpm(name, path))
+        return result
+
+
+class DebRepo(Repo):
+    @property
+    def releases(self):
+        """ Find all the "Release" files to be signed within a Debian repo """
+        match = os.path.join(self.path, 'dists', '*', 'Release')
+        return glob(match)
 
 
 class RepoCollector(list):
@@ -21,8 +66,13 @@ class RepoCollector(list):
                              self.path)
 
         # Check whether our root (self.path) is itself a repo.
-        if self.is_debian_repo(self.path):
-            self.append(self.path)
+
+        if self._is_rpm_repo(self.path):
+            self.append(RpmRepo(self.path))
+            return
+
+        if self._is_debian_repo(self.path):
+            self.append(DebRepo(self.path))
             return
 
         # ... if not, walk the tree looking for repos in subdirs.
@@ -32,11 +82,20 @@ class RepoCollector(list):
         path = self.path
 
         for root, dirs, files in walk(path):
-            if self.is_debian_repo(root):
-                self.append(root)
+            if self._is_rpm_repo(root):
+                self.append(RpmRepo(root))
+                continue
+            if self._is_debian_repo(root):
+                self.append(DebRepo(root))
                 continue
 
-    def is_debian_repo(self, directory):
+    def _is_rpm_repo(self, directory):
+        md = os.path.join(directory, 'repodata', 'repomd.xml')
+        if os.path.isfile(md):
+            return True
+        return False
+
+    def _is_debian_repo(self, directory):
         """ Is 'directory' a Debian repository ? """
         join = os.path.join
         isdir = os.path.isdir
@@ -46,21 +105,3 @@ class RepoCollector(list):
         if not isdir(join(directory, 'pool')):
             return False
         return True
-
-    @property
-    def debian_release_files(self):
-        """ Find all the "Release" files to be signed within a Debian repo """
-        result = []
-
-        # Local is faster
-        walk = os.walk
-        join = os.path.join
-        isfile = os.path.isfile
-
-        for repo_path in self:
-            for root, dirs, files in walk(repo_path):
-                for dist in dirs:
-                    release_file = join(root, dist, 'Release')
-                    if isfile(release_file):
-                        result.append(release_file)
-        return result

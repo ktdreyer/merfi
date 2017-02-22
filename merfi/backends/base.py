@@ -1,4 +1,5 @@
-from merfi import base, util
+from merfi import base, logger, util
+from merfi.collector import RepoCollector
 from tambo import Transport
 
 
@@ -16,4 +17,29 @@ class BaseBackend(base.BaseCommand):
         self.sign()
 
     def sign(self):
+        logger.info('Starting path collection, looking for files to sign')
+        repos = RepoCollector(self.path)
+
+        if repos:
+            logger.info('%s repos found' % len(repos))
+        else:
+            logger.warning('No paths found that matched')
+
+        for repo in repos:
+            for path in getattr(repo, 'repomd', set()):
+                self.sign_repomd(path)
+            for rpm in getattr(repo, 'rpms', set()):
+                self.sign_rpm(rpm)
+            for path in getattr(repo, 'releases', set()):
+                self.sign_release(path)
+
+        return repos
+
+    def sign_repomd(self, path):
+        raise NotImplemented()
+
+    def sign_rpm(self, rpm):
+        raise NotImplemented()
+
+    def sign_release(self, path):
         raise NotImplemented()

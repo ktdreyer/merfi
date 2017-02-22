@@ -1,5 +1,4 @@
-from merfi.collector import RepoCollector
-from os.path import join, dirname
+from merfi.collector import RepoCollector, DebRepo, RpmRepo
 
 
 class TestRepoCollector(object):
@@ -7,35 +6,69 @@ class TestRepoCollector(object):
     def setup(self):
         self.paths = RepoCollector(path='/', _eager=False)
 
-    def test_simple_tree(self, deb_repotree):
-        paths = RepoCollector(path=deb_repotree)
-        # The root of the deb_repotree fixture is itself a repository.
-        expected = [ deb_repotree ]
-        assert set(paths) == set(expected)
+    def test_simple_rpm_tree(self, rpmrepos):
+        path = rpmrepos / 'jewel' / 'el6'
+        repos = RepoCollector(str(path))
+        expected = [RpmRepo(str(path))]
+        assert set(repos) == set(expected)
 
-    def test_path_is_absolute(self):
-        assert self.paths._abspath('/') == '/'
+    def test_simple_deb_tree(self, debrepos):
+        path = debrepos / 'jewel'
+        repos = RepoCollector(str(path))
+        expected = [DebRepo(str(path))]
+        assert set(repos) == set(expected)
 
-    def test_path_is_not_absolute(self):
-        assert self.paths._abspath('directory').startswith('/')
-
-    def test_debian_release_files(self, deb_repotree):
-        paths = RepoCollector(deb_repotree)
-        release_files = paths.debian_release_files
-        # The root of the deb_repotree fixture is itself a repository.
+    def test_nested_rpm_trees(self, rpmrepos):
+        repos = RepoCollector(str(rpmrepos))
         expected = [
-            join(deb_repotree, 'dists', 'trusty', 'Release'),
-            join(deb_repotree, 'dists', 'xenial', 'Release'),
+            RpmRepo(str(rpmrepos.join('jewel').join('el6'))),
+            RpmRepo(str(rpmrepos.join('jewel').join('el7'))),
+            RpmRepo(str(rpmrepos.join('luminous').join('el6'))),
+            RpmRepo(str(rpmrepos.join('luminous').join('el7'))),
         ]
-        assert set(release_files) == set(expected)
+        assert set(repos) == set(expected)
 
-    def test_debian_nested_release_files(self, nested_deb_repotree):
-        # go one level up
-        path = dirname(nested_deb_repotree)
-        paths = RepoCollector(path)
-        release_files = paths.debian_release_files
+    def test_nested_deb_trees(self, debrepos):
+        repos = RepoCollector(str(debrepos))
         expected = [
-            join(nested_deb_repotree, 'dists', 'trusty', 'Release'),
-            join(nested_deb_repotree, 'dists', 'xenial', 'Release'),
+            DebRepo(str(debrepos.join('jewel'))),
+            DebRepo(str(debrepos.join('luminous'))),
         ]
-        assert set(release_files) == set(expected)
+        assert set(repos) == set(expected)
+
+
+def TestRpmRepo(object):
+
+    def test_init(self, rpmrepos):
+        path = str(rpmrepos / 'jewel' / 'el6')
+        r = RpmRepo(path)
+        assert isinstance(r, RpmRepo)
+
+    def test_repomd(self, rpmrepos):
+        path = str(rpmrepos / 'jewel' / 'el6')
+        r = RpmRepo(path)
+        expected = str(rpmrepos / 'jewel' / 'el6' / 'repomd.xml')
+        assert r.repomd == expected
+
+    def test_rpms(self, rpmrepos):
+        path = str(rpmrepos / 'jewel' / 'el6')
+        r = RpmRepo(path)
+        expected = [str(rpmrepos / 'jewel' / 'el6' / 'test.el6.rpm')]
+        assert set(r.rpms) == set(expected)
+
+
+def TestDebRepo(object):
+
+    def test_init(self, debrepos):
+        path = str(debrepos / 'jewel')
+        r = DebRepo(path)
+        assert isinstance(r, DebRepo)
+
+    def test_releases(self, debrepos):
+        path = str(debrepos / 'jewel')
+        r = DebRepo(path)
+        expected = [
+            str(debrepos / 'dists' / 'trusty' / 'Release'),
+            str(debrepos / 'dists' / 'xenial' / 'Release'),
+        ]
+        assert set(r.releases) == set(expected)
